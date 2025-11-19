@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Gestion salaires — Pro</title>
+    <!-- Tailwind CDN (Play) pour design pro rapide -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Icons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    +
+    <!-- Chart.js pour graphiques -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- jsPDF + html2canvas pour export PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+      /* petites améliorations visuelles */
+      body {
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial;
+      }
+      .card {
+        background: white;
+      }
+      .glass {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.03),
+          rgba(255, 255, 255, 0.02)
+        );
+      }
+      /* table custom */
+      .table-fixed th,
+      .table-fixed td {
+        padding: 0.75rem 0.5rem;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-50 text-slate-800">
+    <div class="min-h-screen flex">
+      <!-- Sidebar -->
+      <aside class="w-72 bg-white shadow-sm border-r hidden md:block">
+        <div class="p-5">
+          <h2 class="text-xl font-semibold">Gestion Salaires — Pro</h2>
+          <p class="text-sm text-slate-500 mt-1">
+            Suivi salaires, avances, historique et exports
+          </p>
+        </div>
+        <nav class="mt-6 px-2">
+          <a
+            href="#dashboard"
+            class="nav-link flex items-center gap-3 py-2 px-3 rounded hover:bg-slate-50"
+            data-route="dashboard"
+            ><span data-feather="home"></span> Tableau de bord</a
+          >
+          <a
+            href="#members"
+            class="nav-link flex items-center gap-3 py-2 px-3 rounded hover:bg-slate-50"
+            data-route="members"
+            ><span data-feather="users"></span> Membres</a
+          >
+          <a
+            href="#history"
+            class="nav-link flex items-center gap-3 py-2 px-3 rounded hover:bg-slate-50"
+            data-route="history"
+            ><span data-feather="clock"></span> Historique</a
+          >
+          <a
+            href="#settings"
+            class="nav-link flex items-center gap-3 py-2 px-3 rounded hover:bg-slate-50"
+            data-route="settings"
+            ><span data-feather="settings"></span> Paramètres</a
+          >
+        </nav>
+        <div class="mt-auto p-4 text-sm text-slate-500">
+          Version prototype — données locales
+        </div>
+      </aside>
+
+      <!-- Main -->
+      <main class="flex-1 p-5">
+        <!-- top bar mobile -->
+        <div class="md:hidden mb-4 flex items-center justify-between">
+          <h2 class="text-lg font-semibold">Gestion Salaires — Pro</h2>
+          <button id="openMenu" class="p-2 rounded bg-white shadow">
+            <span data-feather="menu"></span>
+          </button>
+        </div>
+
+        <div id="app">
+          <!-- Views rendered here -->
+        </div>
+      </main>
+    </div>
+
+    <!-- Templates (simple single-file SPA) -->
+    <template id="tpl-dashboard">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2">
+          <div class="p-4 bg-white rounded shadow">
+            <div class="flex items-start justify-between">
+              <div>
+                <h3 class="text-lg font-semibold">Tableau de bord</h3>
+                <p class="text-sm text-slate-500">
+                  Résumé global des salaires et avances
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <button
+                  id="btnExportCSV"
+                  class="px-3 py-2 bg-slate-800 text-white rounded"
+                >
+                  Exporter CSV
+                </button>
+                <button id="btnExportPDF" class="px-3 py-2 border rounded">
+                  Exporter PDF
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="p-4 bg-slate-50 rounded">
+                <div class="text-sm text-slate-500">
+                  Total salaires payés (mois)
+                </div>
+                <div id="dashTotalSalaries" class="text-2xl font-bold">0</div>
+              </div>
+              <div class="p-4 bg-slate-50 rounded">
+                <div class="text-sm text-slate-500">
+                  Total avances (ouvertes)
+                </div>
+                <div id="dashTotalAdvances" class="text-2xl font-bold">0</div>
+              </div>
+              <div class="p-4 bg-slate-50 rounded">
+                <div class="text-sm text-slate-500">
+                  Solde net (payé - avances)
+                </div>
+                <div id="dashNet" class="text-2xl font-bold">0</div>
+              </div>
+            </div>
+
+            <div class="mt-6">
+              <canvas id="chartExpenses" height="120"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <aside>
+          <div class="p-4 bg-white rounded shadow space-y-4">
+            <div>
+              <h4 class="font-semibold">Alertes</h4>
+              <div id="alertsList" class="mt-2 text-sm text-rose-600"></div>
+            </div>
+
+            <div>
+              <h4 class="font-semibold">Actions rapides</h4>
+              <div class="mt-2 flex flex-col gap-2">
+                <button
+                  id="quickAddMember"
+                  class="px-3 py-2 bg-slate-800 text-white rounded"
+                >
+                  Ajouter membre
+                </button>
+                <button
+                  id="quickRecordPayment"
+                  class="px-3 py-2 border rounded"
+                >
+                  Enregistrer paiement
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </template>
+
+    <template id="tpl-members">
+      <div class="p-4 bg-white rounded shadow">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-lg font-semibold">Membres</h3>
+            <p class="text-sm text-slate-500">
+              Salaire journalier, avances et actions
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <input
+              id="searchMember"
+              type="text"
+              placeholder="Recherche..."
+              class="px-3 py-2 border rounded"
+            />
+            <button
+              id="btnExportSalaries"
+              class="px-3 py-2 bg-blue-600 text-white rounded"
+            >
+              Exporter Salaires
+            </button>
+            <button
+              id="btnNewMember"
+              class="px-3 py-2 bg-slate-800 text-white rounded"
+            >
+              Nouveau
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-4 overflow-auto">
+          <table class="min-w-full table-fixed">
+            <thead class="text-sm text-slate-500 border-b">
+              <tr>
+                <th class="w-1/3 text-left">Nom</th>
+                <th class="w-1/6">Salaire / jour</th>
+                <th class="w-1/6">Avances</th>
+                <th class="w-1/6">Solde</th>
+                <th class="w-1/6">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="membersTable" class="text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+    </template>
+
+    <template id="tpl-history">
+      <div class="p-4 bg-white rounded shadow">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-lg font-semibold">Historique</h3>
+            <p class="text-sm text-slate-500">
+              Tous les mouvements (paiements, avances, ajustements)
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <select id="filterType" class="px-3 py-2 border rounded">
+              <option value="all">Tous</option>
+              <option value="salary">Paiement</option>
+              <option value="advance">Avance</option>
+              <option value="adjust">Ajustement</option>
+            </select>
+            <input
+              id="filterMember"
+              class="px-3 py-2 border rounded"
+              placeholder="Membre (vide=all)"
+            />
+            <input
+              id="filterFrom"
+              type="date"
+              class="px-3 py-2 border rounded"
+            />
+            <input id="filterTo" type="date" class="px-3 py-2 border rounded" />
+            <button
+              id="applyFilters"
+              class="px-3 py-2 bg-slate-800 text-white rounded"
+            >
+              Appliquer
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-4 overflow-auto">
+          <table class="min-w-full text-sm">
+            <thead class="text-slate-500 border-b">
+              <tr>
+                <th class="text-left">Date</th>
+                <th>Membre</th>
+                <th>Type</th>
+                <th>Montant</th>
+                <th>Motif</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="historyTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </template>
+
+    <template id="tpl-settings">
+      <div class="p-4 bg-white rounded shadow">
+        <h3 class="text-lg font-semibold">Paramètres</h3>
+        <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-slate-600"
+              >Seuil d'alerte avances (% du salaire)</label
+            >
+            <input
+              id="optAlertPercent"
+              type="number"
+              min="0"
+              max="200"
+              class="mt-1 px-3 py-2 border rounded"
+            />
+          </div>
+          <div>
+            <label class="block text-sm text-slate-600">Devise</label>
+            <input
+              id="optCurrency"
+              type="text"
+              class="mt-1 px-3 py-2 border rounded"
+              placeholder="Ex: TND, EUR"
+            />
+          </div>
+        </div>
+        <div class="mt-4">
+          <button
+            id="saveSettings"
+            class="px-3 py-2 bg-slate-800 text-white rounded"
+          >
+            Enregistrer
+          </button>
+          <button id="resetData" class="px-3 py-2 border rounded ml-2">
+            Réinitialiser données
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <!-- Modals -->
+    <div
+      id="modal"
+      class="fixed inset-0 hidden items-center justify-center bg-black/40 z-50"
+    >
+      <div
+        id="modalContent"
+        class="bg-white rounded shadow max-w-xl w-full p-4"
+      ></div>
+    </div>
+
+    <script>
+      // ---------- Simple SPA + state management (localStorage) ----------
+      const LS_KEY = "gs_pro_v1";
+
+      const defaultState = {
+        members: [
+          { id: "m1", name: "Yasser Abis", role: "Dev", salaryDaily: 70 },
+          { id: "m2", name: "Amina K", role: "Designer", salaryDaily: 50 },
+        ],
+        // history: type = 'salary' | 'advance' | 'adjust'
+        history: [
+          {
+            id: "h1",
+            memberId: "m1",
+            type: "advance",
+            amount: 100,
+            date: todayStr(-3),
+            note: "Acompte",
+          },
+          {
+            id: "h2",
+            memberId: "m1",
+            type: "salary",
+            amount: 70,
+            date: todayStr(-1),
+            note: "Salaire journalier",
+          },
+          {
+            id: "h3",
+            memberId: "m2",
+            type: "advance",
+            amount: 30,
+            date: todayStr(-2),
+            note: "Avance exceptionnelle",
+          },
+        ],
+        settings: { alertPercent: 50, currency: "TND" },
+      };
+
+      let state = loadState();
+
+      // ---------- Utilities ----------
+      function uid() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      }
+      function saveState() {
+        localStorage.setItem(LS_KEY, JSON.stringify(state));
+      }
+      function loadState() {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) {
+          localStorage.setItem(LS_KEY, JSON.stringify(defaultState));
+          return JSON.parse(JSON.stringify(defaultState));
+        }
+        try {
+          return JSON.parse(raw);
+        } catch (e) {
+          console.error("load error", e);
+          return JSON.parse(JSON.stringify(defaultState));
+        }
+      }
+      function todayStr(offsetDays = 0) {
+        const d = new Date();
+        d.setDate(d.getDate() + offsetDays);
+        return d.toISOString().slice(0, 10);
+      }
+      function formatMoney(v) {
+        return (
+          new Intl.NumberFormat(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(Number(v)) +
+          " " +
+          (state.settings.currency || "")
+        );
+      }
+      function findMember(id) {
+        return state.members.find((m) => m.id === id);
+      }
+
+      // ---------- Routing & render ----------
+      const app = document.getElementById("app");
+      function route() {
+        const hash = location.hash.replace("#", "") || "dashboard";
+        render(hash);
+        highlightNav(hash);
+      }
+      window.addEventListener("hashchange", route);
+
+      function render(view) {
+        app.innerHTML = "";
+        if (view === "dashboard") renderDashboard();
+        else if (view === "members") renderMembers();
+        else if (view === "history") renderHistory();
+        else if (view === "settings") renderSettings();
+        else renderDashboard();
+      }
+
+      function highlightNav(view) {
+        document.querySelectorAll(".nav-link").forEach((a) => {
+          a.classList.toggle("bg-slate-50", a.dataset.route === view);
+        });
+        feather.replace();
+      }
+
+      // ---------- Dashboard ----------
+      function renderDashboard() {
+        const tpl = document
+          .getElementById("tpl-dashboard")
+          .content.cloneNode(true);
+        app.appendChild(tpl);
+        // compute totals
+        const monthStart = new Date();
+        monthStart.setDate(1);
+        const ms = monthStart.toISOString().slice(0, 10);
+        const salariesThisMonth = state.history
+          .filter((h) => h.type === "salary" && h.date >= ms)
+          .reduce((s, h) => s + Number(h.amount), 0);
+        const advancesOpen = state.history
+          .filter((h) => h.type === "advance")
+          .reduce((s, h) => s + Number(h.amount), 0);
+        document.getElementById("dashTotalSalaries").textContent =
+          formatMoney(salariesThisMonth);
+        document.getElementById("dashTotalAdvances").textContent =
+          formatMoney(advancesOpen);
+        document.getElementById("dashNet").textContent = formatMoney(
+          salariesThisMonth - advancesOpen
+        );
+
+        // chart: last 14 days expenses (salaries + advances positive)
+        const chartEl = document.getElementById("chartExpenses");
+        const days = Array.from({ length: 14 }).map((_, i) => {
+          const d = new Date();
+          d.setDate(d.getDate() - (13 - i));
+          return d.toISOString().slice(0, 10);
+        });
+        const values = days.map((day) =>
+          state.history
+            .filter((h) => h.date === day)
+            .reduce((s, h) => s + Number(h.amount), 0)
+        );
+        new Chart(chartEl, {
+          type: "line",
+          data: {
+            labels: days,
+            datasets: [
+              { label: "Dépenses", data: values, fill: true, tension: 0.3 },
+            ],
+          },
+          options: {
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { maxRotation: 0 } } },
+          },
+        });
+
+        // alerts
+        const alerts = computeAlerts();
+        const alertsList = document.getElementById("alertsList");
+        alertsList.innerHTML = alerts.length
+          ? alerts.map((a) => `• ${a}`).join("<br/>")
+          : '<span class="text-slate-500">Aucune alerte</span>';
+
+        // Quick actions
+        document
+          .getElementById("quickAddMember")
+          .addEventListener("click", () => showMemberModal());
+        document
+          .getElementById("quickRecordPayment")
+          .addEventListener("click", () => showPaymentModal());
+
+        // exports
+        document
+          .getElementById("btnExportCSV")
+          .addEventListener("click", exportCSV);
+        document
+          .getElementById("btnExportPDF")
+          .addEventListener("click", exportPDF);
+      }
+
+      // ---------- Members ----------
+      function renderMembers() {
+        const tpl = document
+          .getElementById("tpl-members")
+          .content.cloneNode(true);
+        app.appendChild(tpl);
+        const tbody = document.getElementById("membersTable");
+        const search = document.getElementById("searchMember");
+        function redraw(filter = "") {
+          tbody.innerHTML = "";
+          const list = state.members.filter((m) =>
+            m.name.toLowerCase().includes(filter.toLowerCase())
+          );
+          list.forEach((m) => {
+            const advances = state.history
+              .filter((h) => h.memberId === m.id && h.type === "advance")
+              .reduce((s, h) => s + Number(h.amount), 0);
+            const payments = state.history
+              .filter((h) => h.memberId === m.id && h.type === "salary")
+              .reduce((s, h) => s + Number(h.amount), 0);
+            const balance = payments - advances;
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+            <td class="border-b"> <div class="font-medium">${escapeHtml(
+              m.name
+            )}</div><div class="text-xs text-slate-500">${escapeHtml(
+              m.role || "—"
+            )}</div></td>
+            <td class="border-b text-center">${formatMoney(m.salaryDaily)}</td>
+            <td class="border-b text-center">${formatMoney(advances)}</td>
+            <td class="border-b text-center">${formatMoney(balance)}</td>
+            <td class="border-b text-center">
+              <div class="flex justify-center gap-2">
+                <button data-action="pay" data-id="${
+                  m.id
+                }" class="px-2 py-1 text-xs bg-green-600 text-white rounded">Paiement</button>
+                <button data-action="adv" data-id="${
+                  m.id
+                }" class="px-2 py-1 text-xs bg-amber-500 text-white rounded">Avance</button>
+                <button data-action="edit" data-id="${
+                  m.id
+                }" class="px-2 py-1 text-xs border rounded">Edit</button>
+              </div>
+            </td>
+          `;
+            tbody.appendChild(tr);
+          });
+        }
+        redraw();
+        search.addEventListener("input", (e) => redraw(e.target.value));
+
+        document
+          .getElementById("btnNewMember")
+          .addEventListener("click", () => showMemberModal());
+        document
+          .getElementById("btnExportSalaries")
+          .addEventListener("click", exportPDF);
+        tbody.addEventListener("click", (e) => {
+          const btn = e.target.closest("button");
+          if (!btn) return;
+          const id = btn.dataset.id;
+          const act = btn.dataset.action;
+          if (act === "pay") showPaymentModal({ memberId: id, type: "salary" });
+          if (act === "adv")
+            showPaymentModal({ memberId: id, type: "advance" });
+          if (act === "edit") showMemberModal({ memberId: id });
+        });
+      }
+
+      // Fonction pour exporter les salaires en CSV
+      function exportSalariesCSV() {
+        const rows = [["Nom", "Rôle", "Salaire/jour", "Avances", "Solde"]];
+
+        state.members.forEach((m) => {
+          const advances = state.history
+            .filter((h) => h.memberId === m.id && h.type === "advance")
+            .reduce((s, h) => s + Number(h.amount), 0);
+          const payments = state.history
+            .filter((h) => h.memberId === m.id && h.type === "salary")
+            .reduce((s, h) => s + Number(h.amount), 0);
+          const balance = payments - advances;
+
+          rows.push([m.name, m.role || "", m.salaryDaily, advances, balance]);
+        });
+
+        const csv = rows
+          .map((r) =>
+            r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(",")
+          )
+          .join("\n");
+
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "salaires_membres.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      // ---------- History ----------
+      function renderHistory() {
+        const tpl = document
+          .getElementById("tpl-history")
+          .content.cloneNode(true);
+        app.appendChild(tpl);
+        const tbody = document.getElementById("historyTable");
+        const filterType = document.getElementById("filterType");
+        const filterMember = document.getElementById("filterMember");
+        const filterFrom = document.getElementById("filterFrom");
+        const filterTo = document.getElementById("filterTo");
+        const apply = document.getElementById("applyFilters");
+
+        function redraw() {
+          const type = filterType.value;
+          const mFilter = filterMember.value.trim().toLowerCase();
+          const from = filterFrom.value;
+          const to = filterTo.value;
+          let rows = state.history
+            .slice()
+            .sort((a, b) => b.date.localeCompare(a.date));
+          if (type !== "all") rows = rows.filter((r) => r.type === type);
+          if (mFilter) {
+            const matched = state.members
+              .filter((m) => m.name.toLowerCase().includes(mFilter))
+              .map((m) => m.id);
+            rows = rows.filter((r) => matched.includes(r.memberId));
+          }
+          if (from) rows = rows.filter((r) => r.date >= from);
+          if (to) rows = rows.filter((r) => r.date <= to);
+
+          tbody.innerHTML =
+            rows
+              .map((r) => {
+                const m = findMember(r.memberId) || { name: "—" };
+                return `<tr class="border-b"><td class="py-2">${
+                  r.date
+                }</td><td>${escapeHtml(m.name)}</td><td>${escapeHtml(
+                  r.type
+                )}</td><td class="text-right">${formatMoney(
+                  r.amount
+                )}</td><td>${escapeHtml(
+                  r.note || ""
+                )}</td><td class="text-right"><button data-id="${
+                  r.id
+                }" class="px-2 py-1 text-xs border rounded del">Suppr</button></td></tr>`;
+              })
+              .join("") ||
+            '<tr><td colspan="6" class="py-4 text-slate-500">Aucun mouvement</td></tr>';
+
+          // attach delete
+          tbody.querySelectorAll(".del").forEach((btn) =>
+            btn.addEventListener("click", () => {
+              if (confirm("Supprimer ce mouvement ?")) {
+                state.history = state.history.filter(
+                  (h) => h.id !== btn.dataset.id
+                );
+                saveState();
+                redraw();
+              }
+            })
+          );
+        }
+
+        apply.addEventListener("click", redraw);
+        redraw();
+      }
+
+      // ---------- Settings ----------
+      function renderSettings() {
+        const tpl = document
+          .getElementById("tpl-settings")
+          .content.cloneNode(true);
+        app.appendChild(tpl);
+        document.getElementById("optAlertPercent").value =
+          state.settings.alertPercent;
+        document.getElementById("optCurrency").value = state.settings.currency;
+        document
+          .getElementById("saveSettings")
+          .addEventListener("click", () => {
+            state.settings.alertPercent =
+              Number(document.getElementById("optAlertPercent").value) || 0;
+            state.settings.currency =
+              document.getElementById("optCurrency").value || "TND";
+            saveState();
+            alert("Paramètres enregistrés");
+            route();
+          });
+        document.getElementById("resetData").addEventListener("click", () => {
+          if (confirm("Tout réinitialiser ?")) {
+            localStorage.removeItem(LS_KEY);
+            state = loadState();
+            route();
+          }
+        });
+      }
+
+      // ---------- Modals: member and payment ----------
+      const modal = document.getElementById("modal");
+      const modalContent = document.getElementById("modalContent");
+      function showModal(html) {
+        modalContent.innerHTML = html;
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+      }
+      function closeModal() {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      }
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+      });
+
+      function showMemberModal(opts = {}) {
+        const member = opts.memberId ? findMember(opts.memberId) : null;
+        showModal(`
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-semibold">${
+              member ? "Modifier membre" : "Nouveau membre"
+            }</h3>
+            <button id="closeM" class="text-slate-500">✕</button>
+          </div>
+          <div>
+            <label class="block text-sm">Nom</label>
+            <input id="mName" class="w-full mt-1 px-3 py-2 border rounded" value="${
+              member ? escapeHtml(member.name) : ""
+            }" />
+            <label class="block text-sm mt-2">Rôle</label>
+            <input id="mRole" class="w-full mt-1 px-3 py-2 border rounded" value="${
+              member ? escapeHtml(member.role) : ""
+            }" />
+            <label class="block text-sm mt-2">Salaire journalier</label>
+            <input id="mSalary" type="number" min="0" step="0.01" class="w-full mt-1 px-3 py-2 border rounded" value="${
+              member ? member.salaryDaily : ""
+            }" />
+            <div class="mt-4 flex gap-2 justify-end">
+              ${
+                member
+                  ? '<button id="delMember" class="px-3 py-2 border rounded">Supprimer</button>'
+                  : ""
+              }
+              <button id="saveMember" class="px-3 py-2 bg-slate-800 text-white rounded">Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      `);
+        document.getElementById("closeM").addEventListener("click", closeModal);
+        document.getElementById("saveMember").addEventListener("click", () => {
+          const name = document.getElementById("mName").value.trim();
+          const role = document.getElementById("mRole").value.trim();
+          const salary = Number(document.getElementById("mSalary").value) || 0;
+          if (!name) {
+            alert("Nom requis");
+            return;
+          }
+          if (member) {
+            member.name = name;
+            member.role = role;
+            member.salaryDaily = salary;
+          } else
+            state.members.push({ id: uid(), name, role, salaryDaily: salary });
+          saveState();
+          closeModal();
+          render("members");
+        });
+        if (member) {
+          document.getElementById("delMember").addEventListener("click", () => {
+            if (!confirm("Supprimer ce membre et tous ses mouvements ?"))
+              return;
+            state.members = state.members.filter((m) => m.id !== member.id);
+            state.history = state.history.filter(
+              (h) => h.memberId !== member.id
+            );
+            saveState();
+            closeModal();
+            render("members");
+          });
+        }
+      }
+
+      function showPaymentModal(opts = {}) {
+        const memberId = opts.memberId || "";
+        const type = opts.type || "salary";
+        showModal(`
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-semibold">${
+              type === "salary"
+                ? "Enregistrer paiement"
+                : type === "advance"
+                ? "Demande d'avance"
+                : "Ajustement"
+            }</h3>
+            <button id="closeP" class="text-slate-500">✕</button>
+          </div>
+          <div>
+            <label class="block text-sm">Membre</label>
+            <select id="pMember" class="w-full mt-1 px-3 py-2 border rounded">${state.members
+              .map(
+                (m) =>
+                  `<option value="${m.id}" ${
+                    m.id === memberId ? "selected" : ""
+                  }>${escapeHtml(m.name)} — ${escapeHtml(
+                    m.role || ""
+                  )}</option>`
+              )
+              .join("")}</select>
+            <label class="block text-sm mt-2">Type</label>
+            <select id="pType" class="w-full mt-1 px-3 py-2 border rounded"><option value="salary">Paiement</option><option value="advance">Avance</option><option value="adjust">Ajustement</option></select>
+            <label class="block text-sm mt-2">Montant</label>
+            <input id="pAmount" type="number" min="0" step="0.01" class="w-full mt-1 px-3 py-2 border rounded" value="${
+              type === "salary" && memberId
+                ? findMember(memberId).salaryDaily || ""
+                : ""
+            }" />
+            <label class="block text-sm mt-2">Date</label>
+            <input id="pDate" type="date" class="w-full mt-1 px-3 py-2 border rounded" value="${todayStr()}" />
+            <label class="block text-sm mt-2">Motif</label>
+            <input id="pNote" class="w-full mt-1 px-3 py-2 border rounded" />
+            <div class="mt-4 flex gap-2 justify-end">
+              <button id="saveP" class="px-3 py-2 bg-slate-800 text-white rounded">Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      `);
+        document.getElementById("closeP").addEventListener("click", closeModal);
+        document.getElementById("pType").value = type;
+        document.getElementById("saveP").addEventListener("click", () => {
+          const memberId = document.getElementById("pMember").value;
+          const pType = document.getElementById("pType").value;
+          const amount = Number(document.getElementById("pAmount").value) || 0;
+          const date = document.getElementById("pDate").value || todayStr();
+          const note = document.getElementById("pNote").value.trim();
+          if (!memberId) {
+            alert("Sélectionner un membre");
+            return;
+          }
+          if (amount <= 0) {
+            if (!confirm("Montant vide ou nul — continuer ?")) return;
+          }
+          state.history.push({
+            id: uid(),
+            memberId,
+            type: pType,
+            amount,
+            date,
+            note,
+          });
+          saveState();
+          closeModal();
+          route();
+        });
+      }
+
+      // ---------- Exports ----------
+      function exportCSV() {
+        const rows = [["date", "membre", "type", "montant", "note"]];
+        state.history
+          .slice()
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .forEach((h) => {
+            rows.push([
+              h.date,
+              (findMember(h.memberId) || { name: "—" }).name,
+              h.type,
+              h.amount,
+              h.note || "",
+            ]);
+          });
+        const csv = rows
+          .map((r) =>
+            r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(",")
+          )
+          .join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "historique.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      async function exportPDF() {
+        const el = document.querySelector("main");
+        const canvas = await html2canvas(el, { scale: 2 });
+        const img = canvas.toDataURL("image/png");
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: "portrait" });
+        const imgProps = pdf.getImageProperties(img);
+        const pdfWidth = pdf.internal.pageSize.getWidth() - 20;
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        pdf.addImage(img, "PNG", 10, 10, pdfWidth, pdfHeight);
+        pdf.save("report.pdf");
+      }
+
+      // ---------- Helpers ----------
+      function computeAlerts() {
+        const alerts = [];
+        state.members.forEach((m) => {
+          const advances = state.history
+            .filter((h) => h.memberId === m.id && h.type === "advance")
+            .reduce((s, h) => s + Number(h.amount), 0);
+          const percent = m.salaryDaily ? (advances / m.salaryDaily) * 100 : 0;
+          if (percent >= state.settings.alertPercent)
+            alerts.push(
+              `${m.name} a ${formatMoney(advances)} d'avances (${Math.round(
+                percent
+              )}% du salaire journalier)`
+            );
+        });
+        return alerts;
+      }
+
+      function escapeHtml(s = "") {
+        return String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            }[c])
+        );
+      }
+
+      // ---------- Init ----------
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!location.hash) location.hash = "#dashboard";
+        route();
+        feather.replace();
+      });
+
+      // mobile menu (small) - simple
+      document.getElementById("openMenu").addEventListener("click", () => {
+        const s = document.querySelector("aside");
+        s.classList.toggle("hidden");
+      });
+
+      // expose some helpers for developer console
+      window.__GS = { state, saveState, loadState };
+
+      let membres = [];
+
+      function ajouterMembre(nom) {
+        let id = Date.now(); // ID unique basé sur l'heure
+        membres.push({
+          id: id,
+          nom: nom,
+          ventes: [],
+        });
+        afficherMembres();
+      }
+      /*
+      const pinCode = "1234"; // Ton code PIN
+
+      let saisie = prompt("Entrez le code PIN pour accéder au site :");
+      if (saisie !== pinCode) {
+        alert("Code PIN incorrect. Accès refusé.");
+        window.location.href =
+          "https://www.facebook.com/caferesto76/?locale=fr_FR"; // Redirection si mauvais code
+      }*/
+    </script>
+  </body>
+</html>
